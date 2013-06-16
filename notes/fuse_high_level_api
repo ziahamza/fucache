@@ -1,0 +1,80 @@
+// these notes are overview of the implementations of the high level fuse api
+// over the low level fuse api
+
+// should be called by the program, with all the high level funcs
+// implmenting the fuse operations
+fuse_main: // implemented in helper.c
+  op = operations by filesystem
+  ch = fuse_mount(char * mountpoint, &args);
+
+  fuse = fuse_new(ch, &args, op, op_size, user_data);
+
+  fuse_daemonize(foreground); or chdir('/') if foreground false
+
+  se = fuse_get_session(fuse);
+
+  fuse_set_signal_handlers(se);
+
+  ch == fuse_session_next_chan(se, NULL);
+
+  fuse_loop(fuse) or fuse_loop_mt(fuse);
+
+
+  fuse_remove_signal_handlers(se);
+  fuse_unmount(mountpoint, ch);
+  fuse_destroy(fuse);
+
+
+// create a new fuse channel over a mountpoint, args as comamndline options
+fuse_mount(mountpoint, args): // implemented in helper.c
+  // make sure that fd 0, 1, 2 are open otherwise chaos ensues!!!
+  fd = fuse_kern_mount(mountpoint, args);
+  ch = fuse_kern_chan_new(fd)
+
+  fd == fuse_chan_fd(ch)(fd)
+
+  return ch
+
+fuse_unmount(mountpoint, ch): // implemented in helper.c
+  fd = fuse_chan_fd(ch)
+
+  // could pass ch as -1 for unmounting all or something, not sure
+  fuse_kern_unmount(mountpoint, ch)
+
+  fuse_chan_destroy(ch);
+
+fuse_new: // implemented in fuse.c
+  // this is the main heart of the high level fuse api, basically maps
+  // the high level api to the fuse low level api, implements all the
+  // low level operations with its own funcs, and its funcs call the
+  // high level funcs stored in fuse_fs
+
+  //initializes the data structures
+
+  // stores the user ops in fuse_fs
+  fs = fuse_fs_new(op, op_size, user_data);
+
+  // fuse_path_ops are low level proxy funcs which call the user defined funcs,
+  // the user defined funcs are stored in fuse object
+  llop = fuse_path_ops;
+
+  // creates a low level loop, stores the f (fuse) in low level user_data, the original user_data is still stored in f.fs->user_data
+  f->se = fuse_lowlevel_new(args, &llop, sizeof(llop), f);
+
+  // adds channel in fuse low level session
+  fuse_session_add_chan(f->se, ch);
+
+  // more data structure initialization
+
+
+fuse_loop: // implemented in fuse.c
+  // delegates the loop to low level session loop, but does some optimization if
+  // remember is set, in which case it will basically poll the channel, and serve the
+  // request it self, caching all the inodes, but when its inactive then deletes the cache,
+  // the cache doesnt exist if remember is not set
+  // the cache has LRU as the choicedata structure
+
+  // basically:
+  if (remember) fuse_session_loop_remember(f); // implemented in fuse.c using poll
+  else fuse_session_loop(f); // the low level fuse loop
+
