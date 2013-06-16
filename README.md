@@ -1,11 +1,8 @@
 # fucache
 The plan is to write a generic FUSE filesystem that caches the static files and resources specially for the heuristics related to work load.
 
-## current status
-visit [http://ziahamza.wordpress.com](http://ziahamza.wordpress.com)
-
 ## updates
-visit http://ziahamza.wordpress.com
+visit [http://ziahamza.wordpress.com](http://ziahamza.wordpress.com)
 
 ## current status
 fiddling around with fuse, learning the high and low level api
@@ -21,8 +18,10 @@ to build proxyfs, simply run
 
     make proxyfs
 
-for usage, run
+for usage
+
     ./proxyfs --help
+
 
 
 
