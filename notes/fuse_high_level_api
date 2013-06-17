@@ -49,7 +49,7 @@ fuse_new: // implemented in fuse.c
   // low level operations with its own funcs, and its funcs call the
   // high level funcs stored in fuse_fs
 
-  //initializes the data structures
+  //initialize the data structures
 
   // stores the user ops in fuse_fs
   fs = fuse_fs_new(op, op_size, user_data);
