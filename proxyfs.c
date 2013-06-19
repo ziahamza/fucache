@@ -200,17 +200,17 @@ int main(int argc, char *argv[]) {
     goto err_unmount;
   }
 
-  res = fuse_daemonize(1);
+  res = fuse_daemonize(foreground);
   if (res == -1) {
     printf("error daemonizing the fuse filesystem\n");
-    goto err_fuse;
+    goto err_unmount;
   }
 
   struct fuse_session *se = fuse_get_session(fuse);
   res = fuse_set_signal_handlers(se);
   if (res == -1) {
     printf("error setting signal handdlers on the fuse session\n");
-    goto err_fuse;
+    goto err_unmount;
   }
 
   if (multithreaded) {
@@ -221,13 +221,17 @@ int main(int argc, char *argv[]) {
   }
   if (res == -1) {
     printf("error running the fuse loop\n");
-    goto err_fuse;
+    goto err_sig_handlers;
   }
 
-err_fuse:
-  fuse_destroy(fuse);
+err_sig_handlers:
+  fuse_remove_signal_handlers(se);
 err_unmount:
   fuse_unmount(mountpoint, ch);
+  // should only be destroyed after unmounting the channel
+  if (fuse) {
+    fuse_destroy(fuse);
+  }
 err_free:
   free(mountpoint);
 

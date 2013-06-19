@@ -31,7 +31,7 @@ fuse_mount(mountpoint, args): // implemented in helper.c
   fd = fuse_kern_mount(mountpoint, args);
   ch = fuse_kern_chan_new(fd)
 
-  fd == fuse_chan_fd(ch)(fd)
+  fd == fuse_chan_fd(ch)
 
   return ch
 
