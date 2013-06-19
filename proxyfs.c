@@ -177,5 +177,59 @@ struct fuse_operations proxy_operations = {
 };
 
 int main(int argc, char *argv[]) {
-	return fuse_main(argc, argv, &proxy_operations, NULL);
+  struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
+  int res, multithreaded, foreground;
+  char *mountpoint;
+
+  res = fuse_parse_cmdline(&args, &mountpoint, &multithreaded, &foreground);
+  if (res == -1) {
+    printf("error parsing cmdline\n");
+    return -1;
+  }
+
+  struct fuse_chan *ch = fuse_mount(mountpoint, &args);
+  if (!ch) {
+    printf("error mounting the fs and creating its channel\n");
+    goto err_free;
+  }
+
+  struct fuse *fuse = fuse_new(ch, &args,
+      &proxy_operations, sizeof(struct fuse_operations), NULL);
+  if (fuse == NULL) {
+    printf("error creating a new fuse fs with our operations\n");
+    goto err_unmount;
+  }
+
+  res = fuse_daemonize(1);
+  if (res == -1) {
+    printf("error daemonizing the fuse filesystem\n");
+    goto err_fuse;
+  }
+
+  struct fuse_session *se = fuse_get_session(fuse);
+  res = fuse_set_signal_handlers(se);
+  if (res == -1) {
+    printf("error setting signal handdlers on the fuse session\n");
+    goto err_fuse;
+  }
+
+  if (multithreaded) {
+    res = fuse_loop_mt(fuse);
+  }
+  else {
+    res = fuse_loop(fuse);
+  }
+  if (res == -1) {
+    printf("error running the fuse loop\n");
+    goto err_fuse;
+  }
+
+err_fuse:
+  fuse_destroy(fuse);
+err_unmount:
+  fuse_unmount(mountpoint, ch);
+err_free:
+  free(mountpoint);
+
+  return 0;
 }
