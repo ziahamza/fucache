@@ -233,6 +233,9 @@ err_unmount:
     fuse_destroy(fuse);
   }
 err_free:
+  // need to free args as fuse may internally allocate args to modify them
+  fuse_opt_free_args(&args);
+
   free(mountpoint);
 
   return 0;
