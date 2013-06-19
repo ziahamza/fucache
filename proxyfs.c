@@ -5,6 +5,7 @@
 
 #include <fuse.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <assert.h>
 #include <errno.h>
@@ -25,18 +26,13 @@ int proxy_getattr(const char *path, struct stat *sbuf) {
 }
 
 int proxy_readlink(const char *path, char *res, size_t len) {
-  int size = readlink(path, res, len);
+  int size = readlink(path, res, len - 1);
 
   if (size == -1) {
     return -errno;
   }
 
-  assert(size >= 0);
-
-  // terminate the string if there is still space
-  if (len - size > 0) {
-    res[size] = '\0';
-  }
+  res[size] = '\0';
 
   return 0;
 }
@@ -71,6 +67,22 @@ int proxy_read(const char *path, char *buf, size_t count, off_t offset, struct f
 
   return res;
 
+}
+
+// zero copy reads through pipe fds and slice trick
+int proxy_read_buf(const char *path, struct fuse_bufvec **bufp, size_t size, off_t offset, struct fuse_file_info *fi) {
+  struct fuse_buf buf = {
+    .flags = FUSE_BUF_IS_FD | FUSE_BUF_FD_SEEK,
+    .fd    = fi->fh,
+    .pos   = offset
+  };
+
+  *bufp = malloc(sizeof(struct fuse_bufvec));
+  **bufp = FUSE_BUFVEC_INIT(size);
+
+  (*bufp)->buf[0] = buf;
+
+  return 0;
 }
 
 int proxy_opendir(const char *path, struct fuse_file_info *finfo) {
@@ -152,7 +164,10 @@ struct fuse_operations proxy_operations = {
   .getattr    = proxy_getattr,
   .readlink   = proxy_readlink,
   .open       = proxy_open,
+
   .read       = proxy_read,
+  .read_buf   = proxy_read_buf,
+
   .release    = proxy_release,
   .statfs     = proxy_statfs,
 
