@@ -1,6 +1,7 @@
 /*
- * a proxy read only fuse filesystem that mounts root file system on a mount point,
+ * implments fu_ops.h using ops for read only proxy fs over root dir
  */
+
 #define FUSE_USE_VERSION 30
 
 #include <fuse.h>
@@ -54,7 +55,6 @@ int proxy_open(const char *path, struct fuse_file_info *finfo) {
 }
 
 /* TODO: handle direct io params in proxy_read and proxy_write */
-
 int proxy_read(const char *path, char *buf, size_t count, off_t offset, struct fuse_file_info *finfo) {
   // file handle valid
   assert(finfo->fh >= 0);
@@ -158,85 +158,22 @@ int proxy_release(const char *path, struct fuse_file_info *finfo) {
   return 0;
 }
 
+struct fuse_operations get_ops() {
+  struct fuse_operations proxy_operations = {
+    .getattr    = proxy_getattr,
+    .readlink   = proxy_readlink,
+    .open       = proxy_open,
 
-/* implementing only read only operations */
-struct fuse_operations proxy_operations = {
-  .getattr    = proxy_getattr,
-  .readlink   = proxy_readlink,
-  .open       = proxy_open,
+    .read       = proxy_read,
+    .read_buf   = proxy_read_buf,
 
-  .read       = proxy_read,
-  .read_buf   = proxy_read_buf,
+    .release    = proxy_release,
+    .statfs     = proxy_statfs,
 
-  .release    = proxy_release,
-  .statfs     = proxy_statfs,
+    .opendir    = proxy_opendir,
+    .readdir    = proxy_readdir,
+    .releasedir = proxy_releasedir
+  };
 
-  .opendir    = proxy_opendir,
-  .readdir    = proxy_readdir,
-  .releasedir = proxy_releasedir
-};
-
-int main(int argc, char *argv[]) {
-  struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
-  int res, multithreaded, foreground;
-  char *mountpoint;
-
-  res = fuse_parse_cmdline(&args, &mountpoint, &multithreaded, &foreground);
-  if (res == -1) {
-    printf("error parsing cmdline\n");
-    return -1;
-  }
-
-  struct fuse_chan *ch = fuse_mount(mountpoint, &args);
-  if (!ch) {
-    printf("error mounting the fs and creating its channel\n");
-    goto err_free;
-  }
-
-  struct fuse *fuse = fuse_new(ch, &args,
-      &proxy_operations, sizeof(struct fuse_operations), NULL);
-  if (fuse == NULL) {
-    printf("error creating a new fuse fs with our operations\n");
-    goto err_unmount;
-  }
-
-  res = fuse_daemonize(foreground);
-  if (res == -1) {
-    printf("error daemonizing the fuse filesystem\n");
-    goto err_unmount;
-  }
-
-  struct fuse_session *se = fuse_get_session(fuse);
-  res = fuse_set_signal_handlers(se);
-  if (res == -1) {
-    printf("error setting signal handdlers on the fuse session\n");
-    goto err_unmount;
-  }
-
-  if (multithreaded) {
-    res = fuse_loop_mt(fuse);
-  }
-  else {
-    res = fuse_loop(fuse);
-  }
-  if (res == -1) {
-    printf("error running the fuse loop\n");
-    goto err_sig_handlers;
-  }
-
-err_sig_handlers:
-  fuse_remove_signal_handlers(se);
-err_unmount:
-  fuse_unmount(mountpoint, ch);
-  // should only be destroyed after unmounting the channel
-  if (fuse) {
-    fuse_destroy(fuse);
-  }
-err_free:
-  // need to free args as fuse may internally allocate args to modify them
-  fuse_opt_free_args(&args);
-
-  free(mountpoint);
-
-  return 0;
+  return proxy_operations;
 }

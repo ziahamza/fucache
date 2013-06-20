@@ -1,3 +1,6 @@
+/*
+ * implementation of inode_table.h using hash tables
+ */
 #include <stdlib.h>
 #include <string.h>
 
@@ -6,6 +9,45 @@
 #include "inode_table.h"
 
 #define FU_HT_MIN_SIZE 8192
+
+// private hash table implementation,
+struct fu_hash_t {
+  struct fu_node_t **store;
+  int size;
+};
+
+/*
+ * inspiration for maintaining name and inode hashtables taken from
+ * fuse.c in libfuse
+ */
+struct fu_node_t {
+  fuse_ino_t inode;
+  char *name;
+  struct fu_node_t *parent;
+
+  // used in the name hash table
+  struct fu_node_t *next_name;
+
+  // used in the indoe hash table
+  struct fu_node_t *next_inode;
+};
+
+struct fu_table_t {
+  struct fu_hash_t inode_table;
+  struct fu_hash_t name_table;
+};
+
+struct fu_node_t * fu_node_parent(struct fu_node_t *node) {
+  return node->parent;
+}
+
+fuse_ino_t fu_node_inode(struct fu_node_t *node) {
+  return node->inode;
+}
+
+const char * fu_node_name(struct fu_node_t *node) {
+  return node->name;
+}
 
 size_t inode_hash(fuse_ino_t inode, size_t max) {
   return ((uint32_t) inode * 2654435761U) % max;
@@ -53,9 +95,16 @@ struct fu_node_t *fu_hash_findinode(struct fu_hash_t *ht, fuse_ino_t inode) {
 }
 
 
-void fu_table_init(struct fu_table_t *table) {
+struct fu_table_t * fu_table_alloc() {
+  struct fu_table_t *table = malloc(sizeof(struct fu_table_t));
   fu_hash_init(&table->inode_table, FU_HT_MIN_SIZE);
   fu_hash_init(&table->name_table, FU_HT_MIN_SIZE);
+
+  return table;
+}
+
+void fu_table_free(struct fu_table_t *table) {
+  free(table);
 }
 
 struct fu_node_t * fu_table_get(struct fu_table_t *table, fuse_ino_t inode) {

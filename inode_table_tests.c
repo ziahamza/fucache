@@ -11,21 +11,21 @@ void err(int cond, char *msg) {
     printf("%dth test failed: %s\n", ++tests_failed, msg);
 }
 int main() {
-  struct fu_table_t nodes;
-  fu_table_init(&nodes);
-  struct fu_node_t *p = fu_table_add(&nodes, 0, "/", 1);
+  struct fu_table_t *nodes = fu_table_alloc();
+  struct fu_node_t *p = fu_table_add(nodes, 0, "/", 1);
 
   err(p != NULL, "cannot add root node");
-  err(p == fu_table_get(&nodes, 1), "cannot retrieve the root back");
+  err(p == fu_table_get(nodes, 1), "cannot retrieve the root back");
 
-  struct fu_node_t *n = fu_table_add(&nodes, 1, "mono", 2);
-  err(n->parent == p, "parent not set to root!");
+  struct fu_node_t *n = fu_table_add(nodes, 1, "mono", 2);
+  err(fu_node_parent(n) == p, "parent not set to root!");
 
-  fu_table_add(&nodes, 1, "news", 3);
-  n = fu_table_add(&nodes, 1, "more", 4);
+  fu_table_add(nodes, 1, "news", 3);
+  n = fu_table_add(nodes, 1, "more", 4);
 
-  err(n == fu_table_lookup(&nodes, 1, "more"), "cannot lookup files under root!");
+  err(n == fu_table_lookup(nodes, 1, "more"), "cannot lookup files under root!");
 
+  fu_table_free(nodes);
   if (tests_failed == 0) {
     printf("%d out of %d tests passed! :) \n",
         tests_total-tests_failed, tests_total);
