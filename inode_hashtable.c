@@ -61,9 +61,13 @@ size_t name_hash(char *name, fuse_ino_t parent, size_t max) {
 
   return hash % max;
 }
-void fu_hash_init(struct fu_hash_t *ht, int size) {
-  ht->size = size;
-  ht->store = malloc(sizeof(struct node *) * size);
+void fu_hash_alloc(struct fu_hash_t *ht) {
+  ht->size = FU_HT_MIN_SIZE;
+  ht->store = malloc(sizeof(struct node *) * FU_HT_MIN_SIZE);
+}
+
+void fu_hash_free(struct fu_hash_t *ht) {
+  free(ht->store);
 }
 
 struct fu_node_t *fu_hash_findname(
@@ -97,13 +101,15 @@ struct fu_node_t *fu_hash_findinode(struct fu_hash_t *ht, fuse_ino_t inode) {
 
 struct fu_table_t * fu_table_alloc() {
   struct fu_table_t *table = malloc(sizeof(struct fu_table_t));
-  fu_hash_init(&table->inode_table, FU_HT_MIN_SIZE);
-  fu_hash_init(&table->name_table, FU_HT_MIN_SIZE);
+  fu_hash_alloc(&table->inode_table);
+  fu_hash_alloc(&table->name_table);
 
   return table;
 }
 
 void fu_table_free(struct fu_table_t *table) {
+  fu_hash_free(&table->inode_table);
+  fu_hash_free(&table->name_table);
   free(table);
 }
 
