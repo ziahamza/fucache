@@ -1,11 +1,9 @@
 #define FUSE_USE_VERSION 30
 #include <fuse.h>
 
-// for get_ops
+// implementations for get_ops and init defined at link time
 #include "fu_ops.h"
-
-// high level init
-#include "init.c"
+#include "init.h"
 
 
 int main(int argc, char *argv[]) {

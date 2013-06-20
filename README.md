@@ -14,13 +14,18 @@ it basically mounts the root filesystem on a mountpoint and all the calls are
 proxied through fuse,
 
 ## build instructions
-to build proxyfs, simply run
+make sure you have libfuse and pkg-config installed locally,
+then to build proxyfs simply run
 
     make proxyfs
 
 for usage
 
     ./proxyfs --help
+
+## tests
+for now, just run
+    make tests
 
 
 
