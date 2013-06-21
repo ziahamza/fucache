@@ -11,3 +11,6 @@ proxyfs: $(INODE_TABLE_IMPL) $(PROXY_FS_OPS) $(INIT_IMPL) main.c
 
 tests: $(INODE_TABLE_IMPL) inode_table_tests.c
 	$(CC) $(CFLAGS) $^ `pkg-config fuse --cflags --libs` -o bin/$@ && ./bin/tests
+
+clean:
+	rm -rf bin/*
