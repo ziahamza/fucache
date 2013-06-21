@@ -5,8 +5,22 @@
 #define FUSE_USE_VERSION 30
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <fuse.h>
 #include <fuse_lowlevel.h>
+
+// inode tables to map inodes to paths
+#include "inode_table.h"
+
+
+// TODO: implement all the low level ops
+struct fuse_lowlevel_ops llops = {
+  .lookup = NULL,
+  .getattr = NULL,
+  .readdir = NULL,
+  .open = NULL,
+  .read = NULL
+};
 
 int init(int argc, char *argv[], struct fuse_operations *ops) {
   // TODO: get fuse args out altogether, implement custom args parser
@@ -28,58 +42,44 @@ int init(int argc, char *argv[], struct fuse_operations *ops) {
     goto err_free;
   }
 
+  // TODO: use foreground
+  fuse_daemonize(1);
+
   // setup internal tables to track inodes
-  struct fu_table_t table;
-  fu_table_init(&table);
-  fu_table_add(&table, 0, "/", FUSE_ROOT_ID);
+  struct fu_table_t *table = fu_table_alloc();
+  fu_table_add(table, 0, "/", FUSE_ROOT_ID);
 
-  res = fuse_daemonize(foreground);
-  if (res == -1) {
-    printf("error daemonizing the fuse filesystem\n");
+  struct fuse_session *se =
+    fuse_lowlevel_new(&args, &llops, sizeof(llops), table);
+
+  if (!se) {
+    printf("error creating a new low level fuse session\n");
     goto err_unmount;
   }
 
-  // TODO: replace fuse_new implementation with a custom one, and handle args
-  struct fuse *fuse = fuse_new(ch, &args,
-      &ops, sizeof(struct fuse_operations), NULL);
-  if (fuse == NULL) {
-    printf("error creating a new fuse fs with our operations\n");
-    goto err_unmount;
-  }
-
-
-  struct fuse_session *se = fuse_get_session(fuse);
   res = fuse_set_signal_handlers(se);
   if (res == -1) {
     printf("error setting signal handdlers on the fuse session\n");
-    goto err_unmount;
+    goto err_session;
   }
 
-  // TODO: replace fuse_loop iml with with a custom one dealing with fuse session
-  if (multithreaded) {
-    res = fuse_loop_mt(fuse);
-  }
-  else {
-    res = fuse_loop(fuse);
-  }
-  if (res == -1) {
-    printf("error running the fuse loop\n");
-    goto err_sig_handlers;
-  }
+  fuse_session_add_chan(se, ch);
 
-err_sig_handlers:
+  // TODO: add support for multithreaded session loop (using fuse_session_loop_mt)
+  res = fuse_session_loop(se);
+
+  fuse_session_remove_chan(ch);
   fuse_remove_signal_handlers(se);
+
+err_session:
+  fuse_session_destroy(se);
 err_unmount:
   fuse_unmount(mountpoint, ch);
-  // should only be destroyed after unmounting the channel
-  if (fuse) {
-    fuse_destroy(fuse);
-  }
 err_free:
   // need to free args as fuse may internally allocate args to modify them
   fuse_opt_free_args(&args);
 
   free(mountpoint);
 
-  return 0;
+  return res ? 1 : 0;
 }
