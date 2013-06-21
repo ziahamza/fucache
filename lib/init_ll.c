@@ -10,7 +10,7 @@
 #include <fuse_lowlevel.h>
 
 // inode tables to map inodes to paths
-#include "inode_table.h"
+#include "../include/inode_table.h"
 
 
 // TODO: implement all the low level ops

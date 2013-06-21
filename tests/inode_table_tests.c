@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "inode_table.h"
+#include "../include/inode_table.h"
 
 int tests_failed = 0;
 int tests_total = 0;

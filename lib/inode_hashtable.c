@@ -6,7 +6,7 @@
 
 #include <fuse_lowlevel.h>
 
-#include "inode_table.h"
+/* #include "inode_table.h" */
 
 #define FU_HT_MIN_SIZE 8192
 

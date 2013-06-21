@@ -2,8 +2,8 @@
 #include <fuse.h>
 
 // implementations for get_ops and init defined at link time
-#include "fu_ops.h"
-#include "init.h"
+#include "include/fu_ops.h"
+#include "include/init.h"
 
 
 int main(int argc, char *argv[]) {
