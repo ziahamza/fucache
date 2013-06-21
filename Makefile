@@ -1,4 +1,5 @@
 CFLAGS = -Wall -Werror
+BUILD_DIR = bin
 
 # may have different implementaions in the future
 INIT_IMPL = lib/init.c
@@ -9,10 +10,11 @@ PROXY_FS_OPS = lib/proxy_ops.c
 .PHONY: proxyfs tests clean
 
 proxyfs: $(INODE_TABLE_IMPL) $(PROXY_FS_OPS) $(INIT_IMPL) main.c
-	$(CC) $(CFLAGS) $^ `pkg-config fuse --cflags --libs` -o bin/$@
+	$(CC) $(CFLAGS) $^ `pkg-config fuse --cflags --libs` -o $(BUILD_DIR)/$@
 
 tests: $(INODE_TABLE_IMPL) tests/inode_table_tests.c
-	$(CC) $(CFLAGS) $^ `pkg-config fuse --cflags --libs` -o bin/$@ && ./bin/tests
+	$(CC) $(CFLAGS) $^ `pkg-config fuse --cflags --libs` -o $(BUILD_DIR)/$@
+	./$(BUILD_DIR)/tests
 
 clean:
-	rm -rf bin/*
+	rm -rf $(BUILD_DIR)/*
