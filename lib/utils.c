@@ -7,7 +7,7 @@
 
 void fu_buf_init(struct fu_buf_t *buf, int init_size) {
   buf->cap = init_size;
-  buf->data = malloc(init_size);
+  buf->data = calloc(init_size, sizeof(char));
   buf->size = 0;
 }
 void fu_buf_resize(struct fu_buf_t *buf, size_t nsize) {

@@ -63,7 +63,7 @@ size_t name_hash(char *name, fuse_ino_t parent, size_t max) {
 }
 void fu_hash_alloc(struct fu_hash_t *ht) {
   ht->size = FU_HT_MIN_SIZE;
-  ht->store = malloc(sizeof(struct node *) * FU_HT_MIN_SIZE);
+  ht->store = calloc(FU_HT_MIN_SIZE, sizeof(struct node *));
 }
 
 void fu_hash_free(struct fu_hash_t *ht) {
@@ -100,7 +100,7 @@ struct fu_node_t *fu_hash_findinode(struct fu_hash_t *ht, fuse_ino_t inode) {
 
 
 struct fu_table_t * fu_table_alloc() {
-  struct fu_table_t *table = malloc(sizeof(struct fu_table_t));
+  struct fu_table_t *table = calloc(1, sizeof(struct fu_table_t));
   fu_hash_alloc(&table->inode_table);
   fu_hash_alloc(&table->name_table);
 
@@ -108,8 +108,20 @@ struct fu_table_t * fu_table_alloc() {
 }
 
 void fu_table_free(struct fu_table_t *table) {
+  for (int i = 0; i < table->inode_table.size; i++) {
+    struct fu_node_t *next;
+    for (
+      struct fu_node_t *node = table->inode_table.store[i];
+      node != NULL;
+      node = next
+    ) {
+      next = node->next_inode;
+      free(node);
+    }
+  }
   fu_hash_free(&table->inode_table);
   fu_hash_free(&table->name_table);
+
   free(table);
 }
 
@@ -130,7 +142,7 @@ struct fu_node_t * fu_table_add(
     return NULL;
   }
 
-  struct fu_node_t *node = malloc(sizeof(struct fu_node_t));
+  struct fu_node_t *node = calloc(1, sizeof(struct fu_node_t));
   node->inode = inode;
   node->name = malloc(sizeof(char) * strlen(name));
   strcpy(node->name, name);
