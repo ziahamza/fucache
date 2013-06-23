@@ -18,6 +18,6 @@ void fu_buf_reset(struct fu_buf_t *buf);
 void fu_buf_push(struct fu_buf_t *buf, const void *item, size_t size);
 void fu_buf_free(struct fu_buf_t *buf);
 
-struct fu_buf_t get_path(struct fu_table_t *, fuse_ino_t, const char *);
+struct fu_buf_t fu_get_path(struct fu_table_t *, fuse_ino_t, const char *);
 
 #endif

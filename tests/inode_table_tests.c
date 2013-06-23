@@ -28,7 +28,7 @@ void inode_table_tests() {
 
   err(n == fu_table_lookup(nodes, 3, "more"), "cannot lookup files under a specific folder in fu_table_t !");
 
-  struct fu_buf_t path_buf = get_path(nodes, 4, NULL);
+  struct fu_buf_t path_buf = fu_get_path(nodes, 4, NULL);
 
   err(strcmp(path_buf.data, "/news/more") == 0, "not getting correct path for a sub folder in fu_table_t!");
 
@@ -64,13 +64,13 @@ void util_tests() {
   struct fu_node_t *p = fu_table_add(nodes, 1, "usr", 2);
 
   err(p == fu_table_lookup(nodes, 1, "usr"), "cannot find home dir in fu_table_t");
-  struct fu_buf_t path_buf = get_path(nodes, 2, NULL);
+  struct fu_buf_t path_buf = fu_get_path(nodes, 2, NULL);
 
   err(strcmp(path_buf.data, "/usr") == 0, "cannot get correct path for an inode");
   fu_buf_free(&path_buf);
 
-  path_buf = get_path(nodes, 2, "local");
-  err(strcmp(path_buf.data, "/usr/local") == 0, "cannot get correct path from get_path");
+  path_buf = fu_get_path(nodes, 2, "local");
+  err(strcmp(path_buf.data, "/usr/local") == 0, "cannot get correct path from fu_get_path");
   fu_buf_free(&path_buf);
 
   fu_table_free(nodes);
