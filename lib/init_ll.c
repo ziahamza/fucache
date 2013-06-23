@@ -12,6 +12,18 @@
 // inode tables to map inodes to paths
 #include "../include/inode_table.h"
 
+// utils used for path funcs
+#include "../include/utils.h"
+
+struct fu_ll_ctx {
+  fu_table_t *table,
+  fuse_operations *ops
+};
+void fu_ll_lookup(fuse_req_t req, fuse_ino_t parent, const char *name) {
+  fu_ll_ctx *ctx = fuse_req_userdata(req);
+
+  // TODO: implement the rest
+}
 
 // TODO: implement all the low level ops
 struct fuse_lowlevel_ops llops = {
@@ -49,8 +61,13 @@ int init(int argc, char *argv[], struct fuse_operations *ops) {
   struct fu_table_t *table = fu_table_alloc();
   fu_table_add(table, 0, "/", FUSE_ROOT_ID);
 
+  struct fu_ll_ctx ctx = {
+    .table = table,
+    .ops = ops
+  };
+
   struct fuse_session *se =
-    fuse_lowlevel_new(&args, &llops, sizeof(llops), table);
+    fuse_lowlevel_new(&args, &llops, sizeof(llops), &ctx);
 
   if (!se) {
     printf("error creating a new low level fuse session\n");
