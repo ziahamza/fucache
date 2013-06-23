@@ -13,7 +13,7 @@ UTILS = lib/utils.c
 proxyfs: $(INODE_TABLE_IMPL) $(UTILS) $(PROXY_FS_OPS) $(INIT_IMPL) main.c
 	$(CC) $(CFLAGS) $^ `pkg-config fuse --cflags --libs` -o $(BUILD_DIR)/$@
 
-tests: $(INODE_TABLE_IMPL) $(UTILS) tests/inode_table_tests.c
+tests: $(INODE_TABLE_IMPL) $(UTILS) tests/main.c
 	$(CC) $(CFLAGS) $^ `pkg-config fuse --cflags --libs` -o $(BUILD_DIR)/$@
 	./$(BUILD_DIR)/tests
 
