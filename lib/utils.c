@@ -32,6 +32,7 @@ void fu_buf_free(struct fu_buf_t *buf) {
   free(buf->data);
 }
 
+// have to free the return buffer using the fu_buf_free when used
 struct fu_buf_t get_path(struct fu_table_t * table, fuse_ino_t pid, const char *name) {
   size_t ptrsize = sizeof(const char *);
   // buffer of strings, should be concatinated from reverse at the end
@@ -64,6 +65,8 @@ struct fu_buf_t get_path(struct fu_table_t * table, fuse_ino_t pid, const char *
   }
 
   fu_buf_push(&res, "\0", 1);
+
+  fu_buf_free(&tmp);
 
   return res;
 }
