@@ -22,10 +22,10 @@ struct fu_table_t * fu_table_alloc();
 void fu_table_free(struct fu_table_t *);
 
 struct fu_node_t * fu_table_add(
-    struct fu_table_t *, fuse_ino_t, char *, fuse_ino_t
+    struct fu_table_t *, fuse_ino_t, const char *, fuse_ino_t
 );
 
-struct fu_node_t * fu_table_lookup(struct fu_table_t *, fuse_ino_t, char *);
+struct fu_node_t * fu_table_lookup(struct fu_table_t *, fuse_ino_t, const char *);
 struct fu_node_t * fu_table_get(struct fu_table_t *, fuse_ino_t);
 
 

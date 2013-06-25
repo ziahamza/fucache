@@ -16,12 +16,15 @@ void util_tests() {
   fu_buf_free(&tmp);
 
   struct fu_table_t *nodes = fu_table_alloc();
+
   fu_table_add(nodes, 0, "/", 1);
+  struct fu_buf_t path_buf = fu_get_path(nodes, 1, NULL);
+  err(strcmp("/", path_buf.data) == 0, "cannot get correct path for rooot!");
+  fu_buf_free(&path_buf);
+
   struct fu_node_t *p = fu_table_add(nodes, 1, "usr", 2);
-
   err(p == fu_table_lookup(nodes, 1, "usr"), "cannot find home dir in fu_table_t");
-  struct fu_buf_t path_buf = fu_get_path(nodes, 2, NULL);
-
+  path_buf = fu_get_path(nodes, 2, NULL);
   err(strcmp(path_buf.data, "/usr") == 0, "cannot get correct path for an inode");
   fu_buf_free(&path_buf);
 

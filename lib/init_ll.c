@@ -9,27 +9,269 @@
 #include <fuse.h>
 #include <fuse_lowlevel.h>
 
+// for ENOENT
+#include <errno.h>
+
+#include <sys/stat.h>
+
 // inode tables to map inodes to paths
 #include "../include/inode_table.h"
 
 // utils used for path funcs
 #include "../include/utils.h"
 
+// in case cannot find inode for an entry or calculating inode not necessary
+#define FUSE_UNKNOWN_INO 0xffffffff
+
 struct fu_ll_ctx {
-  fu_table_t *table,
-  fuse_operations *ops
+  struct fu_table_t *table;
+  struct fuse_operations *ops;
 };
 void fu_ll_lookup(fuse_req_t req, fuse_ino_t parent, const char *name) {
-  fu_ll_ctx *ctx = fuse_req_userdata(req);
+  printf("\n\n Inside fu_ll_lookup:\n");
+  // reply entry for lookup
+  struct fuse_entry_param e = {0};
+  e.generation = 0;
+  e.entry_timeout = 0;
+  e.attr_timeout = 0;
 
-  // TODO: implement the rest
+  struct fu_ll_ctx *ctx = fuse_req_userdata(req);
+
+  struct fu_buf_t path_buf = fu_get_path(ctx->table, parent, name);
+
+  char *path = path_buf.data;
+
+
+  int res = ctx->ops->getattr(path, &e.attr);
+
+  if (res != 0) {
+
+    printf("looking up and error, name: %s, path: %s\n", name, path);
+    fuse_reply_err(req, -res);
+    goto free_buf;
+  }
+
+  struct fu_node_t *node = fu_table_lookup(ctx->table, parent, name);
+  if (!node) {
+    printf("looking up and error, name: %s, path: %s\n", name, path);
+    fuse_reply_err(req, ENOENT);
+    goto free_buf;
+  }
+  e.ino = fu_node_inode(node);
+
+  printf("looking up and success!! name: %s,path: %s\n", name, path);
+  fuse_reply_entry(req, &e);
+
+free_buf:
+  printf("\n");
+  fu_buf_free(&path_buf);
+}
+
+void fu_ll_getattr(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi) {
+  printf("\n\nInside fu_ll_getattr:\n");
+  struct fu_ll_ctx *ctx = fuse_req_userdata(req);
+  struct stat stbuf = {0};
+
+  struct fu_buf_t path_buf = fu_get_path(ctx->table, ino, NULL);
+
+  char *path = path_buf.data;
+
+  int res = ctx->ops->getattr(path, &stbuf);
+  if (res == 0) {
+    printf("getting attr and success!! : %s with ino %ld \n", path, ino);
+    fuse_reply_attr(req, &stbuf, 1.0);
+  }
+  else {
+    printf("getting attr and error : %s with ino %ld \n", path, ino);
+    fuse_reply_err(req, -res);
+  }
+
+  printf("\n");
+  fu_buf_free(&path_buf);
+}
+
+// custom directory handle
+struct fu_dh_t {
+  struct fu_buf_t contents;
+  struct fu_buf_t path_buf;
+  int filled;
+  fuse_ino_t inode;
+  // fuse request for the file handle
+  fuse_req_t req;
+  // high level operations file handle
+  uint64_t dh;
+};
+
+void fu_dh_free(struct fu_dh_t *dh) {
+  fu_buf_free(&dh->contents);
+  fu_buf_free(&dh->path_buf);
+  free(dh);
+}
+void fu_ll_opendir(fuse_req_t req, fuse_ino_t inode,
+     struct fuse_file_info *llfi) {
+  printf("\n\nInside opendir:\n");
+  struct fu_ll_ctx *ctx = fuse_req_userdata(req);
+
+  struct fu_dh_t *dh_ll = malloc(sizeof(struct fu_dh_t));
+  fu_buf_init(&dh_ll->contents, 256);
+
+  dh_ll->filled = 0;
+  dh_ll->inode = inode;
+
+  dh_ll->path_buf  = fu_get_path(ctx->table, inode, NULL);
+  const char *path = dh_ll->path_buf.data;
+
+  int res = ctx->ops->opendir(path, llfi);
+
+  if (res != 0) {
+    fuse_reply_err(req, -res);
+    printf("Cannot open path: %s\n", dh_ll->path_buf.data);
+    fu_dh_free(dh_ll);
+    return;
+  }
+
+  // overwrite the dir handle with our low level one
+  dh_ll->dh = llfi->fh;
+  llfi->fh = (uint64_t) dh_ll;
+
+  // TODO: handle interrupted sycall in case fuse_reply_open returns error
+  // release dir in that case must be called
+  fuse_reply_open(req, llfi);
+  printf("Opened dir successfully! with path: %s\n", dh_ll->path_buf.data);
+}
+
+int fill_dir(void *buf, const char *dir_name, const struct stat *st, off_t off) {
+  struct fu_dh_t *dh_ll = buf;
+  struct fu_ll_ctx  *ctx = fuse_req_userdata(dh_ll->req);
+  int newlen = 0;
+  struct stat new_st = *st;
+
+  struct fu_node_t *node = fu_table_get(ctx->table, st->st_ino);
+  // replace the high level inode with our own one,
+  if (node) {
+    new_st.st_ino = fu_node_inode(node);
+  }
+  else {
+    new_st.st_ino = FUSE_UNKNOWN_INO;
+  }
+
+  if (off) {
+    // not filled, just add it at the right offset
+    dh_ll->filled = 0;
+
+    newlen = dh_ll->contents.size + fuse_add_direntry(
+        dh_ll->req,
+        dh_ll->contents.data + dh_ll->contents.size,
+        dh_ll->contents.size - dh_ll->contents.cap,
+        dir_name,
+        &new_st, off);
+
+    if (newlen > dh_ll->contents.cap) {
+      // buffer not enough, stop adding new entries
+      return 1;
+    }
+  }
+  else {
+    // no offset, so have to append, check if enough cap to add another entry
+    newlen = dh_ll->contents.size + fuse_add_direntry(dh_ll->req, NULL, 0, dir_name, NULL, 0);
+    if (newlen > dh_ll->contents.cap) {
+      fu_buf_resize(&dh_ll->contents, newlen);
+    }
+
+    fuse_add_direntry(dh_ll->req, dh_ll->contents.data + dh_ll->contents.size,
+        dh_ll->contents.cap - dh_ll->contents.size, dir_name, &new_st, newlen);
+  }
+
+  return 0;
+}
+
+void fu_ll_readdir(fuse_req_t req, fuse_ino_t inode, size_t size,
+     off_t off, struct fuse_file_info *llfi) {
+  printf("\n\nInside read dir\n");
+  struct fu_ll_ctx *ctx = fuse_req_userdata(req);
+  struct fu_dh_t *dh_ll = (struct fu_dh_t *) llfi->fh;
+
+  if (!off) {
+    dh_ll->filled = 0;
+  }
+
+  printf("dir path: %s\n", dh_ll->path_buf.data);
+
+  if (!dh_ll->filled) {
+    // try to fill the dh_ll, reset buffer to get rid of old dirs
+    fu_buf_reset(&dh_ll->contents);
+    // make sure that it has enough size to accomodate dirs
+    if (size > dh_ll->contents.size) {
+      fu_buf_resize(&dh_ll->contents, size);
+    }
+
+
+    // temporarily change dir handle to the high level one
+    llfi->fh = dh_ll->dh;
+
+    dh_ll->req = req;
+    printf("reading data into dh with resetted buffers!\n");
+    int res = ctx->ops->readdir(
+        dh_ll->path_buf.data, &dh_ll, fill_dir, off, llfi);
+
+    llfi->fh = (uint64_t) dh_ll;
+
+    if (res != 0) {
+      // failed to fill the buffer
+      dh_ll->filled = 0;
+      fuse_reply_err(req, -res);
+    }
+    else {
+      // filled successfully!
+      dh_ll->filled = 1;
+    }
+  }
+
+  // should be filled by now if no errors
+  if (dh_ll->filled) {
+    if (off < dh_ll->contents.size) {
+      printf("not that dir is filled and correct offset, pushing data back!\nn");
+      // valid offset, normalize size now
+      size = off + size > dh_ll->contents.size ?
+        dh_ll->contents.size - off : size;
+      fuse_reply_buf(req, dh_ll->contents.data + off, size);
+    }
+    else {
+      printf("offset too far off, returning null buffer :(\n");
+      // offset too far off, return null buffer
+      fuse_reply_buf(req, NULL, 0);
+    }
+  }
+  else {
+    printf("buffer not filled, just giving back the data that is there\n");
+    // buffer not filled, just return what ever we have, ignore offset
+    fuse_reply_buf(req, dh_ll->contents.data, dh_ll->contents.size);
+  }
+}
+
+void fu_ll_releasedir(fuse_req_t req, fuse_ino_t inode,
+     struct fuse_file_info *llfi) {
+  printf("\n\nInside releasedir\n");
+  struct fu_ll_ctx *ctx = fuse_req_userdata(req);
+  struct fu_dh_t *dh_ll = (struct fu_dh_t *) llfi->fh;
+
+  llfi->fh = dh_ll->dh;
+  int res = ctx->ops->releasedir(dh_ll->path_buf.data, llfi);
+
+  printf("released dir with path %s successfully!\n", dh_ll->path_buf.data);
+
+  fu_dh_free(dh_ll);
+
+  fuse_reply_err(req, -res);
 }
 
 // TODO: implement all the low level ops
 struct fuse_lowlevel_ops llops = {
-  .lookup = NULL,
-  .getattr = NULL,
-  .readdir = NULL,
+  .lookup = fu_ll_lookup,
+  .getattr = fu_ll_getattr,
+  .opendir = fu_ll_opendir,
+  .readdir = fu_ll_readdir,
+  .releasedir = fu_ll_releasedir,
   .open = NULL,
   .read = NULL
 };

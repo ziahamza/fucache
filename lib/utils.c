@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <stdio.h>
 
 #include <fuse_lowlevel.h>
 
@@ -7,7 +8,8 @@
 
 void fu_buf_init(struct fu_buf_t *buf, int init_size) {
   buf->cap = init_size;
-  buf->data = calloc(init_size, sizeof(char));
+  //buf->data = calloc(init_size, sizeof(char));
+  buf->data = malloc(init_size);
   buf->size = 0;
 }
 void fu_buf_resize(struct fu_buf_t *buf, size_t nsize) {
@@ -34,10 +36,17 @@ void fu_buf_free(struct fu_buf_t *buf) {
 
 // have to free the return buffer using the fu_buf_free when used
 struct fu_buf_t fu_get_path(struct fu_table_t * table, fuse_ino_t pid, const char *name) {
+  printf("\n\nInside fu_get_path:\n");
+  if (name) {
+    printf("getting path for pid: %ld, name: %s\n", pid, name);
+  }
+  else {
+    printf("getting path for pid (%ld) with no child name!\n", pid);
+  }
   size_t ptrsize = sizeof(const char *);
   // buffer of strings, should be concatinated from reverse at the end
   struct fu_buf_t tmp;
-  fu_buf_init(&tmp, ptrsize * 20);
+  fu_buf_init(&tmp, ptrsize * 16);
 
   if (name) {
     fu_buf_push(&tmp, &name, ptrsize);
@@ -56,6 +65,12 @@ struct fu_buf_t fu_get_path(struct fu_table_t * table, fuse_ino_t pid, const cha
   struct fu_buf_t res;
   fu_buf_init(&res, sizeof(char) * 256);
 
+  // special case for root
+  if (pid == FUSE_ROOT_ID && !name) {
+    fu_buf_push(&res, "/", 1);
+    goto return_res;
+  }
+
   // array of strings
   const char ** strs = tmp.data;
 
@@ -64,8 +79,9 @@ struct fu_buf_t fu_get_path(struct fu_table_t * table, fuse_ino_t pid, const cha
     fu_buf_push(&res, strs[ind], strlen(strs[ind]));
   }
 
+return_res:
   fu_buf_push(&res, "\0", 1);
-
+  printf("returning path: %s\n\n", res.data);
   fu_buf_free(&tmp);
 
   return res;

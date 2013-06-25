@@ -53,7 +53,7 @@ size_t inode_hash(fuse_ino_t inode, size_t max) {
   return ((uint32_t) inode * 2654435761U) % max;
 }
 
-size_t name_hash(char *name, fuse_ino_t parent, size_t max) {
+size_t name_hash(const char *name, fuse_ino_t parent, size_t max) {
   uint64_t hash = parent;
   for (; *name; name++) {
     hash = hash * 31 + (unsigned char) *name;
@@ -71,7 +71,7 @@ void fu_hash_free(struct fu_hash_t *ht) {
 }
 
 struct fu_node_t *fu_hash_findname(
-    struct fu_hash_t *ht, fuse_ino_t pinode, char *name) {
+    struct fu_hash_t *ht, fuse_ino_t pinode, const char *name) {
 
   struct fu_node_t *node;
   size_t hash = name_hash(name, pinode, ht->size);
@@ -130,13 +130,13 @@ struct fu_node_t * fu_table_get(struct fu_table_t *table, fuse_ino_t inode) {
 }
 
 struct fu_node_t * fu_table_lookup(
-    struct fu_table_t *table, fuse_ino_t pinode, char *name) {
+    struct fu_table_t *table, fuse_ino_t pinode, const char *name) {
 
   return fu_hash_findname(&table->name_table, pinode, name);
 }
 
 struct fu_node_t * fu_table_add(
-    struct fu_table_t *table, fuse_ino_t pinode, char *name, fuse_ino_t inode) {
+    struct fu_table_t *table, fuse_ino_t pinode, const char *name, fuse_ino_t inode) {
   struct fu_node_t *pnode = fu_table_get(table, pinode);
   if (!pnode && pnode != 0) {
     return NULL;
