@@ -124,8 +124,8 @@ void fu_ll_opendir(fuse_req_t req, fuse_ino_t inode,
   int res = ctx->ops->opendir(path, llfi);
 
   if (res != 0) {
-    fuse_reply_err(req, -res);
     printf("Cannot open path: %s\n", dh_ll->path_buf.data);
+    fuse_reply_err(req, -res);
     fu_dh_free(dh_ll);
     return;
   }
@@ -134,10 +134,10 @@ void fu_ll_opendir(fuse_req_t req, fuse_ino_t inode,
   dh_ll->dh = llfi->fh;
   llfi->fh = (uint64_t) dh_ll;
 
+  printf("Opened dir successfully! with path: %s\n", dh_ll->path_buf.data);
   // TODO: handle interrupted sycall in case fuse_reply_open returns error
   // release dir in that case must be called
   fuse_reply_open(req, llfi);
-  printf("Opened dir successfully! with path: %s\n", dh_ll->path_buf.data);
 }
 
 int fill_dir(void *buf, const char *dir_name, const struct stat *st, off_t off) {
@@ -146,41 +146,62 @@ int fill_dir(void *buf, const char *dir_name, const struct stat *st, off_t off) 
   int newlen = 0;
   struct stat new_st = *st;
 
+  printf("Trying to add dir with name (%s) at off (%ld)\n", dir_name, off);
+
   struct fu_node_t *node = fu_table_get(ctx->table, st->st_ino);
   // replace the high level inode with our own one,
   if (node) {
     new_st.st_ino = fu_node_inode(node);
+    printf("got the dir in hash table, giving it our inode (%ld) \n", new_st.st_ino);
   }
   else {
-    new_st.st_ino = FUSE_UNKNOWN_INO;
+    printf("could not find the dir in the hash table, adding it under pid (%ld)\n", dh_ll->inode);
+    if (fu_table_add(ctx->table, dh_ll->inode, dir_name, new_st.st_ino)) {
+      printf("added dir successfully!\n");
+    }
+    else {
+      printf("could not add dir, maybe a pid error, resetting the inode to unknown\n");
+      new_st.st_ino = FUSE_UNKNOWN_INO;
+    }
   }
 
   if (off) {
+    printf("got an offset, so only adding it in that length\n");
     // not filled, just add it at the right offset
     dh_ll->filled = 0;
 
     newlen = dh_ll->contents.size + fuse_add_direntry(
         dh_ll->req,
         dh_ll->contents.data + dh_ll->contents.size,
-        dh_ll->contents.size - dh_ll->contents.cap,
+        dh_ll->contents.cap - dh_ll->contents.size,
         dir_name,
         &new_st, off);
 
     if (newlen > dh_ll->contents.cap) {
+      printf("out buffer size was not enough, stopping further entries\n\n");
       // buffer not enough, stop adding new entries
       return 1;
     }
   }
   else {
+    printf("no offset so appending entries :) \n");
     // no offset, so have to append, check if enough cap to add another entry
     newlen = dh_ll->contents.size + fuse_add_direntry(dh_ll->req, NULL, 0, dir_name, NULL, 0);
     if (newlen > dh_ll->contents.cap) {
       fu_buf_resize(&dh_ll->contents, newlen);
     }
 
-    fuse_add_direntry(dh_ll->req, dh_ll->contents.data + dh_ll->contents.size,
-        dh_ll->contents.cap - dh_ll->contents.size, dir_name, &new_st, newlen);
+    fuse_add_direntry(
+        dh_ll->req,
+        dh_ll->contents.data + dh_ll->contents.size,
+        dh_ll->contents.cap - dh_ll->contents.size,
+        dir_name,
+        &new_st, newlen);
   }
+
+  printf("updating the size  of dir buffer to %d\n\n", newlen);
+  // update buffer size
+  dh_ll->contents.size = newlen;
 
   return 0;
 }
@@ -212,7 +233,7 @@ void fu_ll_readdir(fuse_req_t req, fuse_ino_t inode, size_t size,
     dh_ll->req = req;
     printf("reading data into dh with resetted buffers!\n");
     int res = ctx->ops->readdir(
-        dh_ll->path_buf.data, &dh_ll, fill_dir, off, llfi);
+        dh_ll->path_buf.data, dh_ll, fill_dir, off, llfi);
 
     llfi->fh = (uint64_t) dh_ll;
 
@@ -222,6 +243,7 @@ void fu_ll_readdir(fuse_req_t req, fuse_ino_t inode, size_t size,
       fuse_reply_err(req, -res);
     }
     else {
+      printf("filled the data successfully into buffers!\n");
       // filled successfully!
       dh_ll->filled = 1;
     }
@@ -230,14 +252,14 @@ void fu_ll_readdir(fuse_req_t req, fuse_ino_t inode, size_t size,
   // should be filled by now if no errors
   if (dh_ll->filled) {
     if (off < dh_ll->contents.size) {
-      printf("not that dir is filled and correct offset, pushing data back!\nn");
+      printf("dir is filled and got correct offset (%ld) against total size (%d), replying data back :)\n", off, dh_ll->contents.size);
       // valid offset, normalize size now
       size = off + size > dh_ll->contents.size ?
         dh_ll->contents.size - off : size;
       fuse_reply_buf(req, dh_ll->contents.data + off, size);
     }
     else {
-      printf("offset too far off, returning null buffer :(\n");
+      printf("offset (%ld) against size (%d) too far off, returning null buffer :(\n", off, dh_ll->contents.size);
       // offset too far off, return null buffer
       fuse_reply_buf(req, NULL, 0);
     }
