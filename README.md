@@ -23,6 +23,7 @@ for usage
 
     ./proxyfs --help
 
+to enable the low level init module, read the Makefile :)
 ## tests
 for now, just run
     make tests

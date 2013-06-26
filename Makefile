@@ -1,9 +1,10 @@
 CFLAGS = -Wall -Werror -g
 BUILD_DIR = bin
 
-# may have different implementaions in the future
+# select one of the init implementations, INIT_LL is where the current development is happening
 INIT_IMPL = lib/init.c
-#INIT_IMPL = lib/init_ll.c   #init_ll still not complete, work in progress
+#INIT_IMPL = lib/init_ll.c   # semi usable for simple dir transversal, but still highly unstable
+
 INODE_TABLE_IMPL = lib/inode_hashtable.c
 PROXY_FS_OPS = lib/proxy_ops.c
 UTILS = lib/utils.c
