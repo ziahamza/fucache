@@ -1,4 +1,4 @@
-CFLAGS = -Wall -Werror -g
+CFLAGS = -Werror -Wall -g
 BUILD_DIR = bin
 
 # select one of the init implementations, INIT_LL is where the current development is happening

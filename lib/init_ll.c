@@ -9,6 +9,9 @@
 #include <fuse.h>
 #include <fuse_lowlevel.h>
 
+// for intptr_t
+#include <stdint.h>
+
 // for ENOENT
 #include <errno.h>
 
@@ -121,6 +124,17 @@ void fu_dh_free(struct fu_dh_t *dh) {
   fu_buf_free(&dh->path_buf);
   free(dh);
 }
+
+struct fu_dh_t * fu_ll_getdh(uint64_t fh) {
+  // for gcc pointer integer size mismatch warning
+  return (struct fu_dh_t *) (intptr_t)fh;
+}
+
+uint64_t fu_ll_getfh(struct fu_dh_t * dh) {
+  // for gcc pointer integer size mismatch warning
+  return (uint64_t) (intptr_t)dh;
+}
+
 void fu_ll_opendir(fuse_req_t req, fuse_ino_t inode,
      struct fuse_file_info *llfi) {
   printf("\n\nInside opendir:\n");
@@ -138,7 +152,7 @@ void fu_ll_opendir(fuse_req_t req, fuse_ino_t inode,
   int res = ctx->ops->opendir(path, llfi);
 
   if (res != 0) {
-    printf("Cannot open path: %s\n", dh_ll->path_buf.data);
+    printf("Cannot open path: %s\n", (char *)dh_ll->path_buf.data);
     fuse_reply_err(req, -res);
     fu_dh_free(dh_ll);
     return;
@@ -146,9 +160,9 @@ void fu_ll_opendir(fuse_req_t req, fuse_ino_t inode,
 
   // overwrite the dir handle with our low level one
   dh_ll->dh = llfi->fh;
-  llfi->fh = (uint64_t) dh_ll;
+  llfi->fh = fu_ll_getfh(dh_ll);
 
-  printf("Opened dir successfully! with path: %s\n", dh_ll->path_buf.data);
+  printf("Opened dir successfully! with path: %s\n", (char *)dh_ll->path_buf.data);
   // TODO: handle interrupted sycall in case fuse_reply_open returns error
   // release dir in that case must be called
   fuse_reply_open(req, llfi);
@@ -160,13 +174,13 @@ int fill_dir(void *buf, const char *dir_name, const struct stat *st, off_t off) 
   int newlen = 0;
   struct stat new_st = *st;
 
-  printf("Trying to add dir with name (%s) at off (%ld)\n", dir_name, off);
+  printf("Trying to add dir with name (%s) at off (%lld)\n", dir_name, off);
 
   struct fu_node_t *node = fu_table_get(ctx->table, st->st_ino);
   // replace the high level inode with our own one,
   if (node) {
     new_st.st_ino = fu_node_inode(node);
-    printf("got the dir in hash table, giving it our inode (%ld) \n", new_st.st_ino);
+    printf("got the dir in hash table, giving it our inode (%lld) \n", new_st.st_ino);
   }
   else {
     printf("could not find the dir in the hash table, strange (%ld)\n", dh_ll->inode);
@@ -226,13 +240,13 @@ void fu_ll_readdir(fuse_req_t req, fuse_ino_t inode, size_t size,
      off_t off, struct fuse_file_info *llfi) {
   printf("\n\nInside read dir\n");
   struct fu_ll_ctx *ctx = fuse_req_userdata(req);
-  struct fu_dh_t *dh_ll = (struct fu_dh_t *) llfi->fh;
+  struct fu_dh_t *dh_ll = fu_ll_getdh(llfi->fh);
 
   if (!off) {
     dh_ll->filled = 0;
   }
 
-  printf("dir path: %s\n", dh_ll->path_buf.data);
+  printf("dir path: %s\n", (char *)dh_ll->path_buf.data);
 
   if (!dh_ll->filled) {
     // try to fill the dh_ll, reset buffer to get rid of old dirs
@@ -251,7 +265,7 @@ void fu_ll_readdir(fuse_req_t req, fuse_ino_t inode, size_t size,
     int res = ctx->ops->readdir(
         dh_ll->path_buf.data, dh_ll, fill_dir, off, llfi);
 
-    llfi->fh = (uint64_t) dh_ll;
+    llfi->fh = fu_ll_getfh(dh_ll);
 
     if (res != 0) {
       // failed to fill the buffer
@@ -268,14 +282,14 @@ void fu_ll_readdir(fuse_req_t req, fuse_ino_t inode, size_t size,
   // should be filled by now if no errors
   if (dh_ll->filled) {
     if (off < dh_ll->contents.size) {
-      printf("dir is filled and got correct offset (%ld) with req size (%ld) against total size (%d), replying data back :)\n", off, size, dh_ll->contents.size);
+      printf("dir is filled and got correct offset (%lld) with req size (%zd) against total size (%d), replying data back :)\n", off, size, dh_ll->contents.size);
       // valid offset, normalize size now
       size = off + size > dh_ll->contents.size ?
         dh_ll->contents.size - off : size;
       fuse_reply_buf(req, dh_ll->contents.data + off, size);
     }
     else {
-      printf("offset (%ld) against size (%d) too far off, returning null buffer :(\n", off, dh_ll->contents.size);
+      printf("offset (%lld) against size (%d) too far off, returning null buffer :(\n", off, dh_ll->contents.size);
       // offset too far off, return null buffer
       fuse_reply_buf(req, NULL, 0);
     }
@@ -287,16 +301,17 @@ void fu_ll_readdir(fuse_req_t req, fuse_ino_t inode, size_t size,
   }
 }
 
+
 void fu_ll_releasedir(fuse_req_t req, fuse_ino_t inode,
      struct fuse_file_info *llfi) {
   printf("\n\nInside releasedir\n");
   struct fu_ll_ctx *ctx = fuse_req_userdata(req);
-  struct fu_dh_t *dh_ll = (struct fu_dh_t *) llfi->fh;
+  struct fu_dh_t *dh_ll = fu_ll_getdh(llfi->fh);
 
   llfi->fh = dh_ll->dh;
   int res = ctx->ops->releasedir(dh_ll->path_buf.data, llfi);
 
-  printf("released dir with path %s successfully!\n", dh_ll->path_buf.data);
+  printf("released dir with path %s successfully!\n", (char *)dh_ll->path_buf.data);
 
   fu_dh_free(dh_ll);
 
@@ -308,7 +323,7 @@ void fu_ll_open(fuse_req_t req, fuse_ino_t inode, struct fuse_file_info *fi) {
   struct fu_ll_ctx *ctx = fuse_req_userdata(req);
 
   struct fu_buf_t path_buf = fu_get_path(ctx->table, inode, NULL);
-  printf("opening file with path (%s)\n", path_buf.data);
+  printf("opening file with path (%s)\n", (char *)path_buf.data);
   int res = ctx->ops->open(path_buf.data, fi);
   if (res != 0) {
     printf("got an error opening file\n");
@@ -354,7 +369,7 @@ void fu_ll_readlink(fuse_req_t req, fuse_ino_t inode) {
   char linkname[PATH_MAX + 1];
   struct fu_buf_t path_buf = fu_get_path(ctx->table, inode, NULL);
 
-  printf("reading link with path (%s)\n", path_buf.data);
+  printf("reading link with path (%s)\n", (char *)path_buf.data);
 
   int res = ctx->ops->readlink(path_buf.data, linkname, sizeof(linkname));
 

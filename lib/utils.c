@@ -38,6 +38,9 @@ void fu_buf_free(struct fu_buf_t *buf) {
 
 // have to free the return buffer using the fu_buf_free when used
 struct fu_buf_t fu_get_path(struct fu_table_t * table, fuse_ino_t pid, const char *name) {
+  struct fu_node_t *node;
+  int ind = 0;
+
   printf("\n\nInside fu_get_path:\n");
   if (name) {
     printf("getting path for pid: %ld, name: %s\n", pid, name);
@@ -55,7 +58,7 @@ struct fu_buf_t fu_get_path(struct fu_table_t * table, fuse_ino_t pid, const cha
   }
 
   for (
-    struct fu_node_t *node = fu_table_get(table, pid);
+    node = fu_table_get(table, pid);
     fu_node_inode(node) != FUSE_ROOT_ID;
     node = fu_node_parent(node)
   ) {
@@ -76,14 +79,14 @@ struct fu_buf_t fu_get_path(struct fu_table_t * table, fuse_ino_t pid, const cha
   // array of strings
   const char ** strs = tmp.data;
 
-  for (int ind = (tmp.size / ptrsize) - 1; ind >= 0; ind--) {
+  for (ind = (tmp.size / ptrsize) - 1; ind >= 0; ind--) {
     fu_buf_push(&res, "/", 1);
     fu_buf_push(&res, strs[ind], strlen(strs[ind]));
   }
 
 return_res:
   fu_buf_push(&res, "\0", 1);
-  printf("returning path: %s\n\n", res.data);
+  printf("returning path: %s\n\n", (char *)res.data);
   fu_buf_free(&tmp);
 
   return res;

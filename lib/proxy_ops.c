@@ -16,6 +16,9 @@
 #include <dirent.h>
 #include <sys/time.h>
 
+// for intptr_t
+#include <stdint.h>
+
 /* #include "../include/fu_ops.h" */
 
 /* standard fs operations, just mapping them to the glibc calls */
@@ -87,11 +90,21 @@ int proxy_read_buf(const char *path, struct fuse_bufvec **bufp, size_t size, off
   return 0;
 }
 
+static uint64_t getfh(DIR *dh) {
+  // for gcc pointer integer size mismatch warning
+  return (uint64_t) (intptr_t) dh;
+}
+
+static DIR * getdh(uint64_t fh) {
+  // for gcc pointer integer size mismatch warning
+  return (DIR *) (intptr_t) fh;
+}
+
 int proxy_opendir(const char *path, struct fuse_file_info *finfo) {
   DIR *dh = opendir(path);
 
   // hack to store the dir pointer
-  finfo->fh = (uint64_t) dh;
+  finfo->fh = getfh(dh);
 
   if (dh == NULL) {
     return -errno;
@@ -101,7 +114,7 @@ int proxy_opendir(const char *path, struct fuse_file_info *finfo) {
 }
 
 int proxy_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *finfo) {
-  DIR *dh = (DIR *)finfo->fh;
+  DIR *dh = getdh(finfo->fh);
   struct dirent *de;
 
   // handle is valid
@@ -121,7 +134,7 @@ int proxy_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t off
 }
 
 int proxy_releasedir(const char *path, struct fuse_file_info *finfo) {
-  DIR *dh = (DIR *)finfo->fh;
+  DIR *dh = getdh(finfo->fh);
 
   // handle is valid
   assert(dh != NULL);

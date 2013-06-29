@@ -111,10 +111,12 @@ struct fu_table_t * fu_table_alloc() {
 }
 
 void fu_table_free(struct fu_table_t *table) {
-  for (int i = 0; i < table->inode_table.size; i++) {
+  struct fu_node_t *node;
+  int i;
+  for (i = 0; i < table->inode_table.size; i++) {
     struct fu_node_t *next;
     for (
-      struct fu_node_t *node = table->inode_table.store[i];
+      node = table->inode_table.store[i];
       node != NULL;
       node = next
     ) {
