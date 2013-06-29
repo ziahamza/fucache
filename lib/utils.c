@@ -1,6 +1,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#define FUSE_USE_VERSION 30
+
 #include <fuse_lowlevel.h>
 
 #include "../include/inode_table.h"

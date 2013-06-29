@@ -28,9 +28,3 @@ to enable the low level init module, read the Makefile :)
 for now, just run
     make tests
 
-
-
-
-
-
-

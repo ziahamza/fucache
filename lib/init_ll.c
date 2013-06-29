@@ -14,6 +14,12 @@
 
 #include <sys/stat.h>
 
+// for PATH_MAX
+#include <limits.h>
+
+// for chdir
+#include <unistd.h>
+
 // inode tables to map inodes to paths
 #include "../include/inode_table.h"
 
@@ -29,42 +35,50 @@ struct fu_ll_ctx {
 };
 void fu_ll_lookup(fuse_req_t req, fuse_ino_t parent, const char *name) {
   printf("\n\n Inside fu_ll_lookup:\n");
+  struct fu_ll_ctx *ctx = fuse_req_userdata(req);
+
   // reply entry for lookup
   struct fuse_entry_param e = {0};
   e.generation = 0;
   e.entry_timeout = 0;
   e.attr_timeout = 0;
 
-  struct fu_ll_ctx *ctx = fuse_req_userdata(req);
+  if (name[0] == '.' && name[1] == '.' && strlen(name) == 2) {
+    parent = fu_node_inode(fu_node_parent(fu_table_get(ctx->table, parent)));
+  }
 
   struct fu_buf_t path_buf = fu_get_path(ctx->table, parent, name);
 
-  char *path = path_buf.data;
+  const char *path = path_buf.data;
 
 
   int res = ctx->ops->getattr(path, &e.attr);
 
   if (res != 0) {
 
-    printf("looking up and error, name: %s, path: %s\n", name, path);
+    printf("looking up and error, path: %s\n", path);
     fuse_reply_err(req, -res);
     goto free_buf;
   }
 
   struct fu_node_t *node = fu_table_lookup(ctx->table, parent, name);
   if (!node) {
-    printf("looking up and error, name: %s, path: %s\n", name, path);
+    printf("cannot find lookup path: (%s) adding it in the table\n", path);
+    node = fu_table_add(ctx->table, parent, name, e.attr.st_ino);
+    /*
     fuse_reply_err(req, ENOENT);
     goto free_buf;
+    */
   }
+
   e.ino = fu_node_inode(node);
 
-  printf("looking up and success!! name: %s,path: %s\n", name, path);
+  printf("looking up and success!! path: %s\n", path);
   fuse_reply_entry(req, &e);
 
 free_buf:
-  printf("\n");
   fu_buf_free(&path_buf);
+  printf("\n");
 }
 
 void fu_ll_getattr(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi) {
@@ -74,7 +88,7 @@ void fu_ll_getattr(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi) {
 
   struct fu_buf_t path_buf = fu_get_path(ctx->table, ino, NULL);
 
-  char *path = path_buf.data;
+  const char *path = path_buf.data;
 
   int res = ctx->ops->getattr(path, &stbuf);
   if (res == 0) {
@@ -155,7 +169,8 @@ int fill_dir(void *buf, const char *dir_name, const struct stat *st, off_t off) 
     printf("got the dir in hash table, giving it our inode (%ld) \n", new_st.st_ino);
   }
   else {
-    printf("could not find the dir in the hash table, adding it under pid (%ld)\n", dh_ll->inode);
+    printf("could not find the dir in the hash table, strange (%ld)\n", dh_ll->inode);
+    /*
     if (fu_table_add(ctx->table, dh_ll->inode, dir_name, new_st.st_ino)) {
       printf("added dir successfully!\n");
     }
@@ -163,6 +178,7 @@ int fill_dir(void *buf, const char *dir_name, const struct stat *st, off_t off) 
       printf("could not add dir, maybe a pid error, resetting the inode to unknown\n");
       new_st.st_ino = FUSE_UNKNOWN_INO;
     }
+    */
   }
 
   if (off) {
@@ -252,7 +268,7 @@ void fu_ll_readdir(fuse_req_t req, fuse_ino_t inode, size_t size,
   // should be filled by now if no errors
   if (dh_ll->filled) {
     if (off < dh_ll->contents.size) {
-      printf("dir is filled and got correct offset (%ld) against total size (%d), replying data back :)\n", off, dh_ll->contents.size);
+      printf("dir is filled and got correct offset (%ld) with req size (%ld) against total size (%d), replying data back :)\n", off, size, dh_ll->contents.size);
       // valid offset, normalize size now
       size = off + size > dh_ll->contents.size ?
         dh_ll->contents.size - off : size;
@@ -287,15 +303,86 @@ void fu_ll_releasedir(fuse_req_t req, fuse_ino_t inode,
   fuse_reply_err(req, -res);
 }
 
+void fu_ll_open(fuse_req_t req, fuse_ino_t inode, struct fuse_file_info *fi) {
+  printf("\n\nInside open:\n");
+  struct fu_ll_ctx *ctx = fuse_req_userdata(req);
+
+  struct fu_buf_t path_buf = fu_get_path(ctx->table, inode, NULL);
+  printf("opening file with path (%s)\n", path_buf.data);
+  int res = ctx->ops->open(path_buf.data, fi);
+  if (res != 0) {
+    printf("got an error opening file\n");
+    fuse_reply_err(req, -res);
+  }
+  else {
+    printf("opened the file!\n");
+    // TODO: handle the case when syscall is interupted
+    fuse_reply_open(req, fi);
+  }
+
+  fu_buf_free(&path_buf);
+}
+
+void fu_ll_read(fuse_req_t req, fuse_ino_t inode, size_t size, off_t off, struct fuse_file_info *fi) {
+  printf("\n\nInside read:\n");
+  struct fu_ll_ctx *ctx = fuse_req_userdata(req);
+  struct fuse_bufvec *buf = malloc(sizeof(struct fuse_bufvec));
+  *buf = FUSE_BUFVEC_INIT(size);
+  buf->buf[0].mem = malloc(size);
+
+  struct fu_buf_t path_buf = fu_get_path(ctx->table, inode, NULL);
+  const char *path = path_buf.data;
+
+  printf("reading path (%s)\n", path);
+
+  int res = ctx->ops->read(path, buf->buf[0].mem, size, off, fi);
+  if (res < 0) {
+    printf("got an error reading file\n");
+    fuse_reply_err(req, -res);
+  }
+  else {
+    printf("successfully returned back data\n");
+    fuse_reply_data(req, buf, FUSE_BUF_SPLICE_MOVE);
+  }
+
+  fu_buf_free(&path_buf);
+}
+
+void fu_ll_readlink(fuse_req_t req, fuse_ino_t inode) {
+  printf("\n\nInside readlink\n");
+  struct fu_ll_ctx *ctx = fuse_req_userdata(req);
+  char linkname[PATH_MAX + 1];
+  struct fu_buf_t path_buf = fu_get_path(ctx->table, inode, NULL);
+
+  printf("reading link with path (%s)\n", path_buf.data);
+
+  int res = ctx->ops->readlink(path_buf.data, linkname, sizeof(linkname));
+
+  if (res != 0) {
+    printf("got an error resolving link\n");
+    fuse_reply_err(req, -res);
+  }
+  else {
+    linkname[PATH_MAX] = '\0';
+    printf("returning back the actual link (%s)\n", linkname);
+    fuse_reply_readlink(req, linkname);
+  }
+
+  fu_buf_free(&path_buf);
+}
+
 // TODO: implement all the low level ops
 struct fuse_lowlevel_ops llops = {
   .lookup = fu_ll_lookup,
   .getattr = fu_ll_getattr,
+
   .opendir = fu_ll_opendir,
   .readdir = fu_ll_readdir,
   .releasedir = fu_ll_releasedir,
-  .open = NULL,
-  .read = NULL
+
+  .open = fu_ll_open,
+  .read = fu_ll_read,
+  .readlink = fu_ll_readlink
 };
 
 int init(int argc, char *argv[], struct fuse_operations *ops) {
@@ -320,6 +407,8 @@ int init(int argc, char *argv[], struct fuse_operations *ops) {
 
   // TODO: use foreground
   fuse_daemonize(1);
+
+  //chdir(mountpoint);
 
   // setup internal tables to track inodes
   struct fu_table_t *table = fu_table_alloc();

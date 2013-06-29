@@ -1,6 +1,9 @@
 /*
  * implementation of inode_table.h using hash tables
  */
+
+#define FUSE_USE_VERSION 30
+
 #include <stdlib.h>
 #include <string.h>
 

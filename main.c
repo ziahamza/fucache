@@ -1,4 +1,5 @@
 #define FUSE_USE_VERSION 30
+
 #include <fuse.h>
 
 // implementations for get_ops and init defined at link time

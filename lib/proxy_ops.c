@@ -16,6 +16,8 @@
 #include <dirent.h>
 #include <sys/time.h>
 
+/* #include "../include/fu_ops.h" */
+
 /* standard fs operations, just mapping them to the glibc calls */
 int proxy_getattr(const char *path, struct stat *sbuf) {
   int res = lstat(path, sbuf);
