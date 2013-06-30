@@ -1,5 +1,5 @@
 # fucache
-The plan is to write a generic FUSE filesystem that caches the static files and resources specially for the heuristics related to work load.
+The plan is to write a generic FUSE filesystem that caches the static files and resources specially for the heuristics related to webservers. .
 
 ## updates
 visit [http://ziahamza.wordpress.com](http://ziahamza.wordpress.com)
@@ -23,7 +23,7 @@ for usage
 
     ./proxyfs --help
 
-to enable the low level init module, read the Makefile :)
+to enable the low level init module and other features, read the Makefile :)
 ## tests
 for now, just run
     make tests

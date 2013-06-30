@@ -16,8 +16,25 @@
 #include <dirent.h>
 #include <sys/time.h>
 
+// for mmap
+#include <sys/mman.h>
+
 // for intptr_t
 #include <stdint.h>
+
+#include "../include/utils.h"
+
+struct fu_ofile_t {
+  char * path;
+  int fd;
+};
+
+struct fu_buf_t open_files;
+
+void * proxy_init(struct fuse_conn_info *conn) {
+  fu_buf_init(&open_files, sizeof(struct fu_ofile_t *));
+  return NULL;
+}
 
 /* #include "../include/fu_ops.h" */
 
@@ -56,23 +73,46 @@ int proxy_open(const char *path, struct fuse_file_info *finfo) {
 	if ((finfo->flags & 3) != O_RDONLY)
 		return -EACCES;
 
-  int fd = open(path, finfo->flags);
+  struct fu_ofile_t **files = open_files.data;
+  struct fu_ofile_t *file = NULL;
+  int num_files = open_files.size / sizeof(struct fu_ofile_t *), i = 0;
 
-  if (fd == -1) {
-    return -errno;
+
+  for (i = 0; i < num_files; i++) {
+    if (strcmp(files[i]->path, path) == 0) {
+      file = files[i];
+      break;
+    }
   }
 
-  finfo->fh = fd;
+  if (!file) {
+    int fd = open(path, finfo->flags);
+    if (fd == -1) {
+      perror("cannot open file\n");
+      return -errno;
+    }
+
+    printf("creating a new file (%s) with fd: %d\n", path, fd);
+
+    file = malloc(sizeof(struct fu_ofile_t));
+    file->fd = fd;
+    file->path = malloc(sizeof(char) * strlen(path));
+    strcpy(file->path, path);
+    fu_buf_push(&open_files, &file, sizeof(struct fu_ofile_t *));
+  }
+
+  finfo->fh = i;
 
   return 0;
+
 }
 
 /* TODO: handle direct io params in proxy_read and proxy_write */
 int proxy_read(const char *path, char *buf, size_t count, off_t offset, struct fuse_file_info *finfo) {
-  // file handle valid
-  assert(finfo->fh >= 0);
+  struct fu_ofile_t **files = open_files.data;
+  struct fu_ofile_t *file = files[finfo->fh];
 
-  int res = pread(finfo->fh, buf, count, offset);
+  int res = pread(file->fd, buf, count, offset);
 
   if (res == -1) {
     return -errno;
@@ -85,13 +125,15 @@ int proxy_read(const char *path, char *buf, size_t count, off_t offset, struct f
 
 
 // zero copy reads through pipe fds and slice trick
-int proxy_read_buf(const char *path, struct fuse_bufvec **bufp, size_t size, off_t offset, struct fuse_file_info *fi) {
+int proxy_read_buf(const char *path, struct fuse_bufvec **bufp, size_t size, off_t offset, struct fuse_file_info *finfo) {
+  struct fu_ofile_t **files = open_files.data;
+  struct fu_ofile_t *file = files[finfo->fh];
 
   *bufp = malloc(sizeof(struct fuse_bufvec));
   **bufp = FUSE_BUFVEC_INIT(size);
 
   (*bufp)->buf[0].flags = FUSE_BUF_IS_FD | FUSE_BUF_FD_SEEK;
-  (*bufp)->buf[0].fd = fi->fh;
+  (*bufp)->buf[0].fd = file->fd;
   (*bufp)->buf[0].pos = offset;
 
   return 0;
@@ -168,20 +210,14 @@ int proxy_statfs(const char *path, struct statvfs *stbuf) {
 /* TODO: implement flush */
 
 int proxy_release(const char *path, struct fuse_file_info *finfo) {
-  // file handle valid
-  assert(finfo->fh >= 0);
-
-  int res = close(finfo->fh);
-
-  if (res == -1) {
-    return -errno;
-  }
 
   return 0;
 }
 
 struct fuse_operations get_ops() {
   struct fuse_operations proxy_operations = {
+    .init       = proxy_init,
+
     .getattr    = proxy_getattr,
     .access     = proxy_access,
     .readlink   = proxy_readlink,
@@ -195,10 +231,7 @@ struct fuse_operations get_ops() {
 
     .opendir    = proxy_opendir,
     .readdir    = proxy_readdir,
-    .releasedir = proxy_releasedir,
-
-    .flag_nullpath_ok = 1
-
+    .releasedir = proxy_releasedir
   };
 
   return proxy_operations;

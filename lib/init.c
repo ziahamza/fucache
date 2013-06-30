@@ -51,7 +51,6 @@ int init(int argc, char *argv[], struct fuse_operations *ops) {
     goto err_unmount;
   }
 
-  multithreaded = 1;
   if (multithreaded) {
     res = fuse_loop_mt(fuse);
   }
