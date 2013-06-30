@@ -40,54 +40,65 @@ void fu_ll_lookup(fuse_req_t req, fuse_ino_t parent, const char *name) {
   printf("\n\n Inside fu_ll_lookup:\n");
   struct fu_ll_ctx *ctx = fuse_req_userdata(req);
 
-  // reply entry for lookup
-  struct fuse_entry_param e = {0};
-  e.generation = 0;
-  e.entry_timeout = 0;
-  e.attr_timeout = 0;
 
   if (name[0] == '.' && name[1] == '.' && strlen(name) == 2) {
     parent = fu_node_inode(fu_node_parent(fu_table_get(ctx->table, parent)));
   }
 
-  struct fu_buf_t path_buf = fu_get_path(ctx->table, parent, name);
-
-  const char *path = path_buf.data;
-
-
-  int res = ctx->ops->getattr(path, &e.attr);
-
-  if (res != 0) {
-
-    printf("looking up and error, path: %s\n", path);
-    fuse_reply_err(req, -res);
-    goto free_buf;
-  }
-
   struct fu_node_t *node = fu_table_lookup(ctx->table, parent, name);
   if (!node) {
-    printf("cannot find lookup path: (%s) adding it in the table\n", path);
-    node = fu_table_add(ctx->table, parent, name, e.attr.st_ino);
-    /*
-    fuse_reply_err(req, ENOENT);
-    goto free_buf;
-    */
+    struct stat st = {0};
+
+    struct fu_buf_t path_buf = fu_get_path(ctx->table, parent, name);
+    const char *path = path_buf.data;
+    int res = ctx->ops->getattr(path, &st);
+
+    printf("node not found, trying to add it!! path: %s\n", path);
+
+    fu_buf_free(&path_buf);
+
+    if (res != 0) {
+
+      printf("looking up and error, path: %s\n", path);
+      fuse_reply_err(req, -res);
+      return;
+    }
+
+    node = fu_table_add(ctx->table, parent, name, st.st_ino);
+    fu_node_setstat(node, st);
+
+  }
+  else {
+    printf("getting node %s from cache!\n", name);
   }
 
-  e.ino = fu_node_inode(node);
 
-  printf("looking up and success!! path: %s\n", path);
+  // reply entry for lookup
+  struct fuse_entry_param e = {0};
+  e.generation = 0;
+  e.entry_timeout = 3500;
+  e.attr_timeout = 3500;
+  e.ino = fu_node_inode(node);
+  e.attr = fu_node_stat(node);
+
+
   fuse_reply_entry(req, &e);
 
-free_buf:
-  fu_buf_free(&path_buf);
-  printf("\n");
 }
 
 void fu_ll_getattr(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi) {
   printf("\n\nInside fu_ll_getattr:\n");
   struct fu_ll_ctx *ctx = fuse_req_userdata(req);
   struct stat stbuf = {0};
+
+  struct fu_node_t *node = fu_table_get(ctx->table, ino);
+  if (node) {
+    printf("reading %s from cache!\n", fu_node_name(node));
+    stbuf = fu_node_stat(node);
+
+    fuse_reply_attr(req, &stbuf, 3500);
+    return;
+  }
 
   struct fu_buf_t path_buf = fu_get_path(ctx->table, ino, NULL);
 
@@ -103,7 +114,6 @@ void fu_ll_getattr(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi) {
     fuse_reply_err(req, -res);
   }
 
-  printf("\n");
   fu_buf_free(&path_buf);
 }
 
@@ -183,7 +193,8 @@ int fill_dir(void *buf, const char *dir_name, const struct stat *st, off_t off) 
     printf("got the dir in hash table, giving it our inode (%lld) \n", new_st.st_ino);
   }
   else {
-    printf("could not find the dir in the hash table, strange (%ld)\n", dh_ll->inode);
+    printf("could not find the dir in the hash table, strange (%lld)\n", st->st_ino);
+    new_st.st_ino = FUSE_UNKNOWN_INO;
     /*
     if (fu_table_add(ctx->table, dh_ll->inode, dir_name, new_st.st_ino)) {
       printf("added dir successfully!\n");
@@ -193,6 +204,7 @@ int fill_dir(void *buf, const char *dir_name, const struct stat *st, off_t off) 
       new_st.st_ino = FUSE_UNKNOWN_INO;
     }
     */
+
   }
 
   if (off) {
@@ -249,13 +261,12 @@ void fu_ll_readdir(fuse_req_t req, fuse_ino_t inode, size_t size,
   printf("dir path: %s\n", (char *)dh_ll->path_buf.data);
 
   if (!dh_ll->filled) {
-    // try to fill the dh_ll, reset buffer to get rid of old dirs
-    fu_buf_reset(&dh_ll->contents);
     // make sure that it has enough size to accomodate dirs
     if (size > dh_ll->contents.size) {
       fu_buf_resize(&dh_ll->contents, size);
     }
 
+    dh_ll->filled = 1;
 
     // temporarily change dir handle to the high level one
     llfi->fh = dh_ll->dh;
@@ -274,8 +285,6 @@ void fu_ll_readdir(fuse_req_t req, fuse_ino_t inode, size_t size,
     }
     else {
       printf("filled the data successfully into buffers!\n");
-      // filled successfully!
-      dh_ll->filled = 1;
     }
   }
 
@@ -326,7 +335,8 @@ void fu_ll_open(fuse_req_t req, fuse_ino_t inode, struct fuse_file_info *fi) {
   printf("opening file with path (%s)\n", (char *)path_buf.data);
   int res = ctx->ops->open(path_buf.data, fi);
   if (res != 0) {
-    printf("got an error opening file\n");
+    errno = -res;
+    perror("got an error opening file");
     fuse_reply_err(req, -res);
   }
   else {
@@ -373,17 +383,37 @@ void fu_ll_readlink(fuse_req_t req, fuse_ino_t inode) {
 
   int res = ctx->ops->readlink(path_buf.data, linkname, sizeof(linkname));
 
+  linkname[PATH_MAX] = '\0';
+
   if (res != 0) {
     printf("got an error resolving link\n");
     fuse_reply_err(req, -res);
   }
   else {
-    linkname[PATH_MAX] = '\0';
     printf("returning back the actual link (%s)\n", linkname);
     fuse_reply_readlink(req, linkname);
   }
 
   fu_buf_free(&path_buf);
+}
+
+void fu_ll_release(fuse_req_t req, fuse_ino_t inode, struct fuse_file_info *fi) {
+  struct fu_ll_ctx *ctx = fuse_req_userdata(req);
+  struct fu_buf_t path_buf = fu_get_path(ctx->table, inode, NULL);
+  const char *path = path_buf.data;
+
+  int res = ctx->ops->release(path, fi);
+
+  if (res != 0) {
+    printf("got an error closing file %s\n", path);
+    fuse_reply_err(req, -res);
+  }
+  else {
+    printf("closed the file %s successfully!\n", path);
+  }
+
+  fu_buf_free(&path_buf);
+
 }
 
 // TODO: implement all the low level ops
@@ -397,7 +427,8 @@ struct fuse_lowlevel_ops llops = {
 
   .open = fu_ll_open,
   .read = fu_ll_read,
-  .readlink = fu_ll_readlink
+  .readlink = fu_ll_readlink,
+  .release = fu_ll_release
 };
 
 int init(int argc, char *argv[], struct fuse_operations *ops) {
@@ -423,11 +454,15 @@ int init(int argc, char *argv[], struct fuse_operations *ops) {
   // TODO: use foreground
   fuse_daemonize(1);
 
-  //chdir(mountpoint);
 
   // setup internal tables to track inodes
   struct fu_table_t *table = fu_table_alloc();
-  fu_table_add(table, 0, "/", FUSE_ROOT_ID);
+  struct fu_node_t *root = fu_table_add(table, 0, "/", FUSE_ROOT_ID);
+
+  struct stat st;
+  if (ops->getattr("/", &st) == 0) {
+    fu_node_setstat(root, st);
+  }
 
   struct fu_ll_ctx ctx = {
     .table = table,
@@ -451,7 +486,7 @@ int init(int argc, char *argv[], struct fuse_operations *ops) {
   fuse_session_add_chan(se, ch);
 
   // TODO: add support for multithreaded session loop (using fuse_session_loop_mt)
-  res = fuse_session_loop(se);
+  res = fuse_session_loop_mt(se);
 
   fuse_session_remove_chan(ch);
   fuse_remove_signal_handlers(se);

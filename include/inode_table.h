@@ -15,6 +15,9 @@ struct fu_node_t;
 struct fu_node_t *fu_node_parent(struct fu_node_t *);
 fuse_ino_t fu_node_inode(struct fu_node_t *);
 const char * fu_node_name(struct fu_node_t *);
+struct stat fu_node_stat(struct fu_node_t *);
+
+struct fu_node_t * fu_node_setstat(struct fu_node_t *, struct stat st);
 
 struct fu_table_t;
 

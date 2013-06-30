@@ -41,13 +41,6 @@ struct fu_buf_t fu_get_path(struct fu_table_t * table, fuse_ino_t pid, const cha
   struct fu_node_t *node;
   int ind = 0;
 
-  printf("\n\nInside fu_get_path:\n");
-  if (name) {
-    printf("getting path for pid: %ld, name: %s\n", pid, name);
-  }
-  else {
-    printf("getting path for pid (%ld) with no child name!\n", pid);
-  }
   size_t ptrsize = sizeof(const char *);
   // buffer of strings, should be concatinated from reverse at the end
   struct fu_buf_t tmp;
@@ -86,7 +79,6 @@ struct fu_buf_t fu_get_path(struct fu_table_t * table, fuse_ino_t pid, const cha
 
 return_res:
   fu_buf_push(&res, "\0", 1);
-  printf("returning path: %s\n\n", (char *)res.data);
   fu_buf_free(&tmp);
 
   return res;

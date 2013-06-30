@@ -8,6 +8,9 @@
 #include <stdlib.h>
 #include <fuse.h>
 
+// for chdir
+#include <unistd.h>
+
 int init(int argc, char *argv[], struct fuse_operations *ops) {
   struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
   int res, multithreaded, foreground;
@@ -32,6 +35,8 @@ int init(int argc, char *argv[], struct fuse_operations *ops) {
     goto err_unmount;
   }
 
+  // for development
+  foreground = 1;
   res = fuse_daemonize(foreground);
 
   if (res == -1) {
@@ -46,6 +51,7 @@ int init(int argc, char *argv[], struct fuse_operations *ops) {
     goto err_unmount;
   }
 
+  multithreaded = 1;
   if (multithreaded) {
     res = fuse_loop_mt(fuse);
   }

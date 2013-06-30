@@ -23,12 +23,20 @@
 
 /* standard fs operations, just mapping them to the glibc calls */
 int proxy_getattr(const char *path, struct stat *sbuf) {
-  int res = lstat(path, sbuf);
-  if (res == -1) {
+
+  if (lstat(path, sbuf) == -1) {
     return -errno;
   }
 
   return 0;
+}
+
+int proxy_access(const char *path, int mask) {
+
+	if (access(path, mask) == -1)
+		return -errno;
+
+	return 0;
 }
 
 int proxy_readlink(const char *path, char *res, size_t len) {
@@ -176,13 +184,14 @@ int proxy_release(const char *path, struct fuse_file_info *finfo) {
 struct fuse_operations get_ops() {
   struct fuse_operations proxy_operations = {
     .getattr    = proxy_getattr,
+    .access     = proxy_access,
     .readlink   = proxy_readlink,
-    .open       = proxy_open,
 
+    .open       = proxy_open,
     .read       = proxy_read,
     .read_buf   = proxy_read_buf,
-
     .release    = proxy_release,
+
     .statfs     = proxy_statfs,
 
     .opendir    = proxy_opendir,

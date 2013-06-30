@@ -28,6 +28,8 @@ struct fu_node_t {
   char *name;
   struct fu_node_t *parent;
 
+  struct stat st;
+
   // used in the name hash table
   struct fu_node_t *next_name;
 
@@ -46,6 +48,16 @@ struct fu_node_t * fu_node_parent(struct fu_node_t *node) {
 
 fuse_ino_t fu_node_inode(struct fu_node_t *node) {
   return node->inode;
+}
+
+struct stat fu_node_stat(struct fu_node_t *node) {
+  return node->st;
+}
+
+struct fu_node_t * fu_node_setstat(struct fu_node_t *node, struct stat st) {
+  node->st = st;
+  node->st.st_ino = node->inode;
+  return node;
 }
 
 const char * fu_node_name(struct fu_node_t *node) {
@@ -79,14 +91,12 @@ struct fu_node_t *fu_hash_findname(
   struct fu_node_t *node;
   size_t hash = name_hash(name, pinode, ht->size);
   for (node = ht->store[hash]; node; node = node->next_name) {
-    if (node->parent->inode == pinode && name_hash(node->name, pinode, ht->size) == hash) {
-      if (strcmp(name, node->name) == 0) {
-        return node;
-      }
+    if (node->parent->inode == pinode && strcmp(name, node->name) == 0) {
+      break;
     }
   }
 
-  return NULL;
+  return node;
 }
 
 struct fu_node_t *fu_hash_findinode(struct fu_hash_t *ht, fuse_ino_t inode) {
@@ -149,8 +159,11 @@ struct fu_node_t * fu_table_add(
 
   struct fu_node_t *node = calloc(1, sizeof(struct fu_node_t));
   node->inode = inode;
+  node->st.st_ino = inode;
+
   node->name = malloc(sizeof(char) * strlen(name));
   strcpy(node->name, name);
+
 
   node->parent = pnode;
 
