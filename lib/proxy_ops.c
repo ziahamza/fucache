@@ -82,18 +82,17 @@ int proxy_read(const char *path, char *buf, size_t count, off_t offset, struct f
 
 }
 
+
+
 // zero copy reads through pipe fds and slice trick
 int proxy_read_buf(const char *path, struct fuse_bufvec **bufp, size_t size, off_t offset, struct fuse_file_info *fi) {
-  struct fuse_buf buf = {
-    .flags = FUSE_BUF_IS_FD | FUSE_BUF_FD_SEEK,
-    .fd    = fi->fh,
-    .pos   = offset
-  };
 
   *bufp = malloc(sizeof(struct fuse_bufvec));
   **bufp = FUSE_BUFVEC_INIT(size);
 
-  (*bufp)->buf[0] = buf;
+  (*bufp)->buf[0].flags = FUSE_BUF_IS_FD | FUSE_BUF_FD_SEEK;
+  (*bufp)->buf[0].fd = fi->fh;
+  (*bufp)->buf[0].pos = offset;
 
   return 0;
 }
